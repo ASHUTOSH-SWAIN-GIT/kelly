@@ -22,5 +22,4 @@ func EncodeMessage(msg Message) ([]byte, error) {
 
 	copy(buf[16:], msg.Payload)
 	return buf, nil
-
 }
