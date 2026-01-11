@@ -1,6 +1,8 @@
 package log
 
-import "os"
+import (
+	"os"
+)
 
 type Log struct {
 	Dir         string
@@ -50,4 +52,49 @@ func (l *Log) rotate() error {
 	l.Active = segment
 
 	return nil
+}
+
+func (l *Log) findSegment(offset int64) *Segment {
+	for i := len(l.Segments) - 1; i >= 0; i-- {
+		if l.Segments[i].BaseOffset <= offset {
+			return l.Segments[i]
+		}
+	}
+	return nil
+}
+
+func (l *Log) Read(offset int64, maxBytes int64) ([]Message, error) {
+	var result []Message
+	remaining := maxBytes
+
+	seg := l.findSegment(offset)
+	if seg == nil {
+		return result, nil
+	}
+
+	started := false
+
+	for _, s := range l.Segments {
+		if s == seg {
+			started = true
+		}
+		if !started {
+			continue
+		}
+		msgs, err := s.ReadFrom(offset, remaining)
+		if err != nil {
+			return result, err
+		}
+		for _, m := range msgs {
+			result = append(result, m)
+			remaining -= int64(len(m.Payload))
+			offset = m.Offset + 1
+
+			if remaining <= 0 {
+				return result, nil
+			}
+		}
+
+	}
+	return result, nil
 }

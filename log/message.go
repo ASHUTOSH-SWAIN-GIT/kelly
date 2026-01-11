@@ -23,3 +23,21 @@ func EncodeMessage(msg Message) ([]byte, error) {
 	copy(buf[16:], msg.Payload)
 	return buf, nil
 }
+
+func DecodeMessage(data []byte) (Message, int, error) {
+	offset := int64(binary.BigEndian.Uint64(data[0:8]))
+	size := int(binary.BigEndian.Uint32(data[8:12]))
+
+	start := 16
+	end := start + size
+
+	payload := make([]byte, size)
+	copy(payload, data[start:end])
+
+	msg := Message{
+		Offset:  offset,
+		Payload: payload,
+	}
+
+	return msg, end, nil
+}

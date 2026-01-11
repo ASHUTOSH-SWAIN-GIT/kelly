@@ -34,6 +34,22 @@ func NewIndex(dir string, baseOffset int64) (*Index, error) {
 	}, nil
 }
 
+func (i *Index) Write(offset int64, position int64) error {
+	buf := make([]byte, indexEntrySize)
+	rel := int32(offset - i.BaseOffset)
+
+	binary.BigEndian.PutUint32(buf[0:4], uint32(rel))
+	binary.BigEndian.PutUint32(buf[4:8], uint32(position))
+
+	_, err := i.File.Write(buf)
+	if err != nil {
+		return err
+	}
+
+	i.Size += indexEntrySize
+	return nil
+}
+
 func (i *Index) Read(offset int64) (int64, error) {
 	rel := int32(offset - i.BaseOffset)
 	entries := i.Size / indexEntrySize
