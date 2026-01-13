@@ -1,7 +1,10 @@
 package log
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 )
 
 type Log struct {
@@ -97,4 +100,89 @@ func (l *Log) Read(offset int64, maxBytes int64) ([]Message, error) {
 
 	}
 	return result, nil
+}
+
+func NewLog(dir string, segementSize int64) (*Log, error) {
+	err := os.Mkdir(dir, 0755)
+	if err != nil {
+		return nil, err
+	}
+
+	log := &Log{
+		Dir:         dir,
+		SegmentSize: segementSize,
+	}
+
+	err := log.loadSegments()
+	if err != nil {
+		return nil, err
+	}
+	return log, err
+}
+
+func (l *Log) loadSegments() error {
+	files, err := os.ReadDir(l.Dir)
+	if err != nil {
+		return err
+	}
+
+	var baseOffsets []int64
+
+	for _, f := range files {
+		if filepath.Ext(f.Name()) == ".log" {
+			var offset int64
+			fmt.Sscanf(f.Name(), "%d.log", &offset)
+			baseOffsets = append(baseOffsets, offset)
+		}
+	}
+
+	sort.Slice(baseOffsets, func(i, j int) bool {
+		return baseOffsets[i] < baseOffsets[j]
+	})
+
+	for _, base := range baseOffsets {
+		seg, err := l.loadSegment(base)
+		if err != nil {
+			return err
+		}
+		l.Segments = append(l.Segments, seg)
+	}
+
+	if len(l.Segments) == 0 {
+		seg, err := NewSegment(l.Dir, 0)
+		if err != nil {
+			return err
+		}
+		l.Segments = []*Segment{seg}
+	}
+
+	l.Active = l.Segments[len(l.Segments)-1]
+	return nil
+}
+
+func (l *Log) loadSegment(baseOffset int64) (*Segment, error) {
+	logFile := filepath.Join(l.Dir, formatOffset(baseOffset)+".log")
+
+	file, err := os.OpenFile(logFile, os.O_RDWR, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	index, err := NewIndex(l.Dir, baseOffset)
+	if err != nil {
+		return nil, err
+	}
+
+	seg := &Segment{
+		BaseOffset: baseOffset,
+		File:       file,
+		Index:      index,
+	}
+
+	err = seg.recover()
+	if err != nil {
+		return nil, err
+	}
+
+	return seg, nil
 }

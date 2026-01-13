@@ -1,6 +1,7 @@
 package log
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 )
@@ -99,4 +100,42 @@ func (s *Segment) ReadFrom(Offset int64, maxBytes int64) ([]Message, error) {
 		read += consumed
 	}
 	return messages, nil
+}
+
+func (s *Segment) recover() error {
+	var offset = s.BaseOffset
+	var position int64 = 0
+
+	stat, err := s.File.Stat()
+	if err != nil {
+		return err
+	}
+
+	for position < stat.Size() {
+		header := make([]byte, 16)
+		n, err := s.File.ReadAt(header, position)
+		if err != nil || n < 16 {
+			break
+		}
+
+		size := int64(binary.BigEndian.Uint32(header[8:12]))
+		entrySize := 16 + size
+
+		if position+entrySize > stat.Size() {
+			break
+		}
+
+		err = s.Index.Write(offset, position)
+		if err != nil {
+			return err
+		}
+
+		position += entrySize
+		offset++
+	}
+
+	s.Size = position
+	s.NextOffset = offset
+
+	return s.File.Truncate(position)
 }
